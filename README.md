@@ -60,6 +60,7 @@ Tips:
 | Item                 | What it does                                                    |
 | -------------------- | --------------------------------------------------------------- |
 | AI cleanup           | Turn off to paste exactly what Whisper heard.                   |
+| Language             | Auto-detect, English or Greek. Pin it if accented speech comes out in the wrong language. |
 | Hotkey               | Hold Right Option, Right Command, Right Control or Fn instead.  |
 | Set Groq API key…    | Change your key.                                                |
 | Open settings file   | Edit all settings (below).                                      |

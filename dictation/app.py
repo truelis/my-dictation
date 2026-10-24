@@ -27,6 +27,8 @@ KEY_NAMES = {
     "right_control": "Right Control ⌃",
     "fn": "Fn",
 }
+# Pinning the language stops Whisper from mistaking accented English for another language.
+LANGUAGES = {"": "Auto-detect", "en": "English", "el": "Greek"}
 # Holds shorter than this are treated as accidental taps.
 MIN_SECONDS = 0.3
 
@@ -55,11 +57,18 @@ class DictationApp(rumps.App):
             item.key_name = key
             item.state = key == self.config.hotkey
             self.hotkey_menu.add(item)
+        self.language_menu = rumps.MenuItem("Language")
+        for code, name in LANGUAGES.items():
+            item = rumps.MenuItem(name, callback=self.choose_language)
+            item.code = code
+            item.state = code == self.config.language
+            self.language_menu.add(item)
         self.menu = [
             self.status_item,
             None,
             self.copy_item,
             self.cleanup_item,
+            self.language_menu,
             self.hotkey_menu,
             rumps.MenuItem("Set Groq API key…", callback=self.ask_api_key),
             rumps.MenuItem("Open settings file", callback=self.open_settings),
@@ -102,6 +111,13 @@ class DictationApp(rumps.App):
         item.state = not item.state
         self.config.cleanup_enabled = bool(item.state)
         config.save(self.config)
+
+    def choose_language(self, item):
+        for other in self.language_menu.values():
+            other.state = other is item
+        self.config.language = item.code
+        config.save(self.config)
+        log(f"Language: {LANGUAGES[item.code]}")
 
     def choose_hotkey(self, item):
         for other in self.hotkey_menu.values():
