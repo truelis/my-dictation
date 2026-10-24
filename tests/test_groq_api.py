@@ -73,3 +73,14 @@ def test_clean_up_falls_back_to_transcript_when_reply_is_empty():
     reply = {"choices": [{"message": {"content": "  "}}]}
     session = FakeSession(FakeResponse(200, reply))
     assert GroqClient("key", session=session).clean_up("raw text", "llama") == "raw text"
+
+
+def test_check_key_rejects_bad_key():
+    class Session(FakeSession):
+        def get(self, url, **kwargs):
+            return self.post(url, **kwargs)
+
+    session = Session(FakeResponse(401, {"error": {"message": "Invalid API Key"}}))
+    with pytest.raises(GroqError, match="Invalid API Key"):
+        GroqClient("bad", session=session).check_key()
+    assert session.calls[0][0].endswith("/models")

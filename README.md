@@ -24,28 +24,21 @@ cd my-dictation
 ./run.sh
 ```
 
-The first run takes about a minute to install. After that, `./run.sh` starts it
-immediately.
+The first run takes about a minute to install. Then the Terminal walks you
+through setup:
 
-### 1. Get a Groq API key
+1. **Groq API key**: sign up at [console.groq.com](https://console.groq.com/),
+   open [API Keys](https://console.groq.com/keys), click **Create API Key**, and
+   paste it into the Terminal when asked. It's checked and saved.
+2. **Permissions**: in **System Settings → Privacy & Security**, turn on your
+   terminal app (Terminal, iTerm…) under **Microphone**, **Accessibility** and
+   **Input Monitoring**. The Terminal tells you which ones are missing. Then
+   quit the terminal app completely (Cmd+Q), reopen it, and run `./run.sh`
+   again.
 
-1. Sign up at [console.groq.com](https://console.groq.com/).
-2. Go to [API Keys](https://console.groq.com/keys) and click **Create API Key**.
-3. Copy it. My Dictation asks for it on first start (or use
-   **🎙 → Set Groq API key…**).
-
-### 2. Grant permissions
-
-macOS asks for these the first time. They go to **Terminal** (or whichever app
-you ran `./run.sh` from), because that's what runs My Dictation.
-
-In **System Settings → Privacy & Security**, turn Terminal on under:
-
-- **Microphone**: to hear you.
-- **Accessibility**: to paste the text for you.
-- **Input Monitoring**: to notice when you hold the dictation key.
-
-After changing these, stop the app (Ctrl+C in Terminal) and run `./run.sh` again.
+When everything is ready the Terminal says **Ready** and shows what happens
+each time you dictate. Keep that window open while you use the app; Ctrl+C
+there (or **🎙 → Quit**) stops it.
 
 ## Use it
 
@@ -99,8 +92,10 @@ use; paid usage is a fraction of a cent per minute of speech.
 
 ## Troubleshooting
 
-- **Nothing happens when I hold the key**: check Accessibility and Input
-  Monitoring for Terminal, then restart the app.
+- **Nothing happens when I hold the key**: look at the Terminal window, which
+  logs every step and error. Check Accessibility and Input Monitoring for your
+  terminal app, then quit it (Cmd+Q) and run `./run.sh` again.
+- **"Already running"**: click 🎙 → Quit, or run `pkill -f 'm dictation'`.
 - **🎙 turns ⚠️**: open the menu to read the error (e.g. an invalid API key).
 - **Text is transcribed but not pasted**: Accessibility permission is missing.
   Use **Copy last** and paste it yourself meanwhile.
@@ -121,3 +116,4 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 | `dictation/audio.py`    | Microphone recording and WAV encoding                       |
 | `dictation/groq_api.py` | Groq transcription and cleanup calls                        |
 | `dictation/config.py`   | Settings file                                               |
+| `dictation/setup.py`    | First-run API key and permission checks in the Terminal     |

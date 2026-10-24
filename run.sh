@@ -25,5 +25,4 @@ if [ ! -f .venv/.installed ] || [ requirements.txt -nt .venv/.installed ]; then
   touch .venv/.installed
 fi
 
-echo "My Dictation is running: look for 🎙 in your menu bar. Press Ctrl+C here to stop it."
-exec .venv/bin/python -m dictation
+exec .venv/bin/python -u -m dictation

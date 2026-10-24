@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import queue
+import sys
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
 
 import rumps
 
-from dictation import audio, config, macos
+from dictation import audio, config, macos, setup
 from dictation.groq_api import GroqClient, GroqError
+from dictation.setup import log
 
 ICONS = {"idle": "🎙", "recording": "🔴", "working": "⏳"}
 STATUS = {
@@ -26,13 +28,12 @@ KEY_NAMES = {
 }
 # Holds shorter than this are treated as accidental taps.
 MIN_SECONDS = 0.3
-ACCESSIBILITY_SETTINGS = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
 
 
 class DictationApp(rumps.App):
-    def __init__(self):
+    def __init__(self, settings: config.Config):
         super().__init__("My Dictation", title=ICONS["idle"], quit_button="Quit")
-        self.config = config.load()
+        self.config = settings
         self.recorder = audio.Recorder()
         # One worker thread runs recording, uploads and API calls in order, off the main thread.
         self.worker = ThreadPoolExecutor(max_workers=1)
@@ -69,26 +70,14 @@ class DictationApp(rumps.App):
         self.listener = macos.HoldKeyListener(
             key_code, flag_mask, self.on_press, self.on_release, self.on_cancel
         )
-        self.listening = self.listener.start()
-        rumps.Timer(self.tick, 0.05).start()
-        rumps.Timer(self.first_run, 0.5).start()
+        # Keep a reference: rumps only holds timers weakly.
+        self.tick_timer = rumps.Timer(self.tick, 0.05)
+        self.tick_timer.start()
 
-    # --- setup -------------------------------------------------------------
-
-    def first_run(self, timer):
-        timer.stop()
-        if not self.listening:
-            rumps.alert(
-                "My Dictation needs permissions",
-                "Give the app that runs My Dictation (e.g. Terminal) Accessibility and Input "
-                "Monitoring permission in System Settings → Privacy & Security, then restart "
-                "My Dictation.",
-            )
-            subprocess.run(["open", ACCESSIBILITY_SETTINGS])
-        if not self.config.api_key():
-            self.ask_api_key(None)
+    # --- menu ---------------------------------------------------------------
 
     def ask_api_key(self, _):
+        macos.bring_to_front()
         window = rumps.Window(
             message="Paste your Groq API key. Get one free at console.groq.com/keys.",
             title="Groq API key",
@@ -102,6 +91,7 @@ class DictationApp(rumps.App):
         if response.clicked and response.text.strip():
             self.config.groq_api_key = response.text.strip()
             config.save(self.config)
+            log("Saved the new Groq API key.")
 
     def open_settings(self, _):
         config.save(self.config)
@@ -137,6 +127,7 @@ class DictationApp(rumps.App):
         self.pressed_at = time.monotonic()
         self.set_state("recording")
         self.sound("Tink")
+        log("Listening…")
         self.worker.submit(self.start_recording)
 
     def on_release(self):
@@ -151,6 +142,7 @@ class DictationApp(rumps.App):
         if self.state != "recording":
             return
         self.set_state("idle")
+        log("Cancelled (another key was pressed).")
         self.worker.submit(self.recorder.stop)
 
     def sound(self, name):
@@ -166,10 +158,23 @@ class DictationApp(rumps.App):
             self.results.put(("error", f"Could not start the microphone: {e}"))
 
     def finish_recording(self, held):
+        try:
+            self.results.put(self.process(held))
+        except Exception as e:
+            # Never leave the app stuck on ⏳.
+            self.results.put(("error", f"Unexpected error: {e!r}"))
+
+    def process(self, held):
         samples = self.recorder.stop()
-        if held < MIN_SECONDS or audio.is_silent(samples):
-            self.results.put(("done", None))
-            return
+        if held < MIN_SECONDS:
+            log("Too short, ignored. Hold the key while you speak.")
+            return ("done", None)
+        if samples.size and not samples.any():
+            return ("error", "The microphone only gave silence. " + setup.MICROPHONE_HINT)
+        if audio.is_silent(samples):
+            log("Didn't hear anything, ignored.")
+            return ("done", None)
+        log(f"Transcribing {len(samples) / audio.SAMPLE_RATE:.1f}s of audio…")
         try:
             client = GroqClient(self.config.api_key())
             text = client.transcribe(
@@ -179,15 +184,16 @@ class DictationApp(rumps.App):
                 self.config.vocabulary,
             )
         except GroqError as e:
-            self.results.put(("error", str(e)))
-            return
+            return ("error", str(e))
+        log(f"Heard: {text}")
         if text and self.config.cleanup_enabled:
             try:
                 text = client.clean_up(text, self.config.cleanup_model, self.config.vocabulary)
+                log(f"Cleaned: {text}")
             except GroqError as e:
                 # Still paste the raw transcript; it's better than losing what was said.
                 self.results.put(("warning", f"AI cleanup failed, pasted the raw text. {e}"))
-        self.results.put(("paste", text))
+        return ("paste", text)
 
     # --- main thread --------------------------------------------------------
 
@@ -212,6 +218,7 @@ class DictationApp(rumps.App):
                 self.notify(value)
 
     def notify(self, message, error=False):
+        log(("Error: " if error else "Note: ") + message)
         if error:
             self.title = "⚠️"
             self.status_item.title = message[:80]
@@ -235,4 +242,25 @@ class DictationApp(rumps.App):
 
 
 def main():
-    DictationApp().run()
+    try:
+        run()
+    except KeyboardInterrupt:
+        print("\nStopped.")
+
+
+def run():
+    settings = config.load()
+    print("My Dictation\n")
+    if not setup.claim_single_instance():
+        print("My Dictation is already running (look for 🎙 in the menu bar). Quit that one first:")
+        print("click 🎙 → Quit, or run:  pkill -f 'm dictation'")
+        sys.exit(1)
+    if not setup.ensure_api_key(settings) or not setup.ensure_permissions():
+        sys.exit(1)
+    app = DictationApp(settings)
+    if not app.listener.start():
+        print(setup.RESTART_HINT)
+        sys.exit(1)
+    log(f"Ready. Click into any text box, hold {KEY_NAMES[settings.hotkey]}, speak, then let go.")
+    log("Press Ctrl+C here (or choose Quit in the 🎙 menu) to stop.")
+    app.run()

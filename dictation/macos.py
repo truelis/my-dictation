@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import time
 from typing import Callable, Optional
 
 import Quartz
-from AppKit import NSPasteboard, NSPasteboardTypeString, NSSound
+from AppKit import NSApplication, NSPasteboard, NSPasteboardTypeString, NSSound
 
 V_KEY = 9
 # Clipboard managers skip items marked with this type, so dictations don't flood their history.
@@ -105,3 +106,50 @@ def play(name: str) -> None:
     sound = NSSound.soundNamed_(name)
     if sound is not None:
         sound.play()
+
+
+def bring_to_front() -> None:
+    """Menu bar apps start in the background; without this, popups open hidden behind other windows."""
+    NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+
+
+# --- permissions (checks are skipped on old PyObjC versions that lack them) ---
+
+def _call(name: str, default: bool = True) -> bool:
+    function = getattr(Quartz, name, None)
+    return bool(function()) if function else default
+
+
+def has_input_monitoring() -> bool:
+    return _call("CGPreflightListenEventAccess")
+
+
+def request_input_monitoring() -> None:
+    _call("CGRequestListenEventAccess")
+
+
+def has_accessibility() -> bool:
+    return _call("CGPreflightPostEventAccess")
+
+
+def request_accessibility() -> None:
+    _call("CGRequestPostEventAccess")
+
+
+def microphone_status() -> str:
+    """'granted', 'denied' or 'unknown' (not asked yet)."""
+    from AVFoundation import AVCaptureDevice, AVMediaTypeAudio
+
+    status = AVCaptureDevice.authorizationStatusForMediaType_(AVMediaTypeAudio)
+    return {3: "granted", 1: "denied", 2: "denied"}.get(status, "unknown")
+
+
+def request_microphone(timeout: float = 60) -> str:
+    """Show macOS's microphone prompt and wait for the answer."""
+    from AVFoundation import AVCaptureDevice, AVMediaTypeAudio
+
+    AVCaptureDevice.requestAccessForMediaType_completionHandler_(AVMediaTypeAudio, lambda granted: None)
+    deadline = time.monotonic() + timeout
+    while microphone_status() == "unknown" and time.monotonic() < deadline:
+        time.sleep(0.2)
+    return microphone_status()

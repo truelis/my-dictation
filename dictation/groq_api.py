@@ -35,8 +35,11 @@ class GroqClient:
         self.timeout = timeout
 
     def _post(self, path: str, **kwargs) -> dict:
+        return self._request("post", path, **kwargs)
+
+    def _request(self, method: str, path: str, **kwargs) -> dict:
         try:
-            response = self.session.post(
+            response = getattr(self.session, method)(
                 f"{API_BASE}{path}",
                 headers={"Authorization": f"Bearer {self.api_key}"},
                 timeout=self.timeout,
@@ -51,6 +54,10 @@ class GroqClient:
                 message = response.text[:200]
             raise GroqError(f"Groq error {response.status_code}: {message}")
         return response.json()
+
+    def check_key(self) -> None:
+        """Raises GroqError if the key is rejected."""
+        self._request("get", "/models")
 
     def transcribe(
         self,
