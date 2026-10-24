@@ -96,7 +96,9 @@ use; paid usage is a fraction of a cent per minute of speech.
 - **Nothing happens when I hold the key**: look at the Terminal window, which
   logs every step and error. Check Accessibility and Input Monitoring for your
   terminal app, then quit it (Cmd+Q) and run `./run.sh` again.
-- **"Already running"**: click 🎙 → Quit, or run `pkill -f 'm dictation'`.
+- **"Already running"** or 🎙 doesn't open its menu: an old copy is stuck
+  (often from pressing Ctrl+Z, which pauses instead of quitting). Run
+  `pkill -9 -f 'm dictation'`, then `./run.sh`. Always stop it with Ctrl+C.
 - **🎙 turns ⚠️**: open the menu to read the error (e.g. an invalid API key).
 - **Text is transcribed but not pasted**: Accessibility permission is missing.
   Use **Copy last** and paste it yourself meanwhile.

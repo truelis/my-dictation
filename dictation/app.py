@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import queue
+import signal
 import sys
 import subprocess
 import time
@@ -266,7 +267,7 @@ def run():
     print("My Dictation\n")
     if not setup.claim_single_instance():
         print("My Dictation is already running (look for 🎙 in the menu bar). Quit that one first:")
-        print("click 🎙 → Quit, or run:  pkill -f 'm dictation'")
+        print("click 🎙 → Quit, or run:  pkill -9 -f 'm dictation'")
         sys.exit(1)
     if not setup.ensure_api_key(settings) or not setup.ensure_permissions():
         sys.exit(1)
@@ -276,4 +277,7 @@ def run():
         sys.exit(1)
     log(f"Ready. Click into any text box, hold {KEY_NAMES[settings.hotkey]}, speak, then let go.")
     log("Press Ctrl+C here (or choose Quit in the 🎙 menu) to stop.")
+    # Ctrl+Z would freeze the app in the background while its 🎙 stays in the menu bar.
+    signal.signal(signal.SIGTSTP, lambda *_: log("Ctrl+Z doesn't stop My Dictation. Use Ctrl+C to quit."))
+    macos.hide_from_dock()
     app.run()

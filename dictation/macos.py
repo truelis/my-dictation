@@ -6,7 +6,7 @@ import time
 from typing import Callable, Optional
 
 import Quartz
-from AppKit import NSApplication, NSPasteboard, NSPasteboardTypeString, NSSound
+from AppKit import NSApplication, NSApplicationActivationPolicyAccessory, NSPasteboard, NSPasteboardTypeString, NSSound
 
 V_KEY = 9
 # Clipboard managers skip items marked with this type, so dictations don't flood their history.
@@ -106,6 +106,11 @@ def play(name: str) -> None:
     sound = NSSound.soundNamed_(name)
     if sound is not None:
         sound.play()
+
+
+def hide_from_dock() -> None:
+    """Run as a menu bar app only, without a (Python rocket) icon in the Dock."""
+    NSApplication.sharedApplication().setActivationPolicy_(NSApplicationActivationPolicyAccessory)
 
 
 def bring_to_front() -> None:
