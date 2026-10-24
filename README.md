@@ -60,6 +60,7 @@ Tips:
 | Item                 | What it does                                                    |
 | -------------------- | --------------------------------------------------------------- |
 | AI cleanup           | Turn off to paste exactly what Whisper heard.                   |
+| Words to spell right | **Add word…** for names and terms it gets wrong (e.g. Groq). Click a word to remove it. |
 | Language             | Auto-detect, English or Greek. Pin it if accented speech comes out in the wrong language. |
 | Hotkey               | Hold Right Option, Right Command, Right Control or Fn instead.  |
 | Set Groq API key…    | Change your key.                                                |
@@ -68,7 +69,8 @@ Tips:
 ## Settings
 
 Settings are saved in `~/.my-dictation/config.json` (only your user can read
-it, since it holds your API key). Restart the app after editing it by hand.
+it, since it holds your API key). Edits you save there apply within a second,
+no restart needed.
 
 | Setting               | Default                  | Meaning                                                              |
 | --------------------- | ------------------------ | -------------------------------------------------------------------- |

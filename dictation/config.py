@@ -45,6 +45,11 @@ class Config:
         return HOTKEYS.get(self.hotkey, HOTKEYS["right_option"])
 
 
+def modified_time(path: Optional[Path] = None) -> float:
+    path = path or CONFIG_PATH
+    return path.stat().st_mtime if path.exists() else 0.0
+
+
 def load(path: Optional[Path] = None) -> Config:
     path = path or CONFIG_PATH
     if not path.exists():

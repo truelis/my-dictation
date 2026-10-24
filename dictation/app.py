@@ -50,39 +50,85 @@ class DictationApp(rumps.App):
         self.status_item = rumps.MenuItem("")
         self.copy_item = rumps.MenuItem("Copy last dictation", callback=self.copy_last)
         self.cleanup_item = rumps.MenuItem("AI cleanup", callback=self.toggle_cleanup)
-        self.cleanup_item.state = self.config.cleanup_enabled
         self.hotkey_menu = rumps.MenuItem("Hotkey")
         for key, name in KEY_NAMES.items():
             item = rumps.MenuItem(name, callback=self.choose_hotkey)
             item.key_name = key
-            item.state = key == self.config.hotkey
             self.hotkey_menu.add(item)
         self.language_menu = rumps.MenuItem("Language")
         for code, name in LANGUAGES.items():
             item = rumps.MenuItem(name, callback=self.choose_language)
             item.code = code
-            item.state = code == self.config.language
             self.language_menu.add(item)
+        self.vocabulary_menu = rumps.MenuItem("Words to spell right")
         self.menu = [
             self.status_item,
             None,
             self.copy_item,
             self.cleanup_item,
+            self.vocabulary_menu,
             self.language_menu,
             self.hotkey_menu,
             rumps.MenuItem("Set Groq API key…", callback=self.ask_api_key),
             rumps.MenuItem("Open settings file", callback=self.open_settings),
             None,
         ]
-        self.set_state("idle")
-
         key_code, flag_mask = self.config.hotkey_spec()
         self.listener = macos.HoldKeyListener(
             key_code, flag_mask, self.on_press, self.on_release, self.on_cancel
         )
-        # Keep a reference: rumps only holds timers weakly.
+        self.settings_mtime = config.modified_time()
+        self.refresh()
+        self.set_state("idle")
+        # Keep references: rumps only holds timers weakly.
         self.tick_timer = rumps.Timer(self.tick, 0.05)
         self.tick_timer.start()
+        self.reload_timer = rumps.Timer(self.reload_if_edited, 1)
+        self.reload_timer.start()
+
+    # --- settings -------------------------------------------------------------
+
+    def change(self, **changes):
+        """Save settings changed from the menu, keeping any edits made in the settings file."""
+        try:
+            fresh = config.load()
+        except ValueError:  # the file has a typo; build on the settings in use
+            fresh = self.config
+        for name, value in changes.items():
+            setattr(fresh, name, value)
+        config.save(fresh)
+        self.settings_mtime = config.modified_time()
+        self.config = fresh
+        self.refresh()
+
+    def reload_if_edited(self, _):
+        """Apply edits made by hand in the settings file without a restart."""
+        mtime = config.modified_time()
+        if mtime == self.settings_mtime:
+            return
+        self.settings_mtime = mtime
+        try:
+            self.config = config.load()
+        except ValueError as e:  # half-saved or mistyped JSON; keep the last good settings
+            log(f"Couldn't read the settings file ({e}). Keeping the previous settings.")
+            return
+        self.refresh()
+        log("Settings file changed, applied.")
+
+    def refresh(self):
+        """Make the menu and hotkey match the current settings."""
+        self.cleanup_item.state = self.config.cleanup_enabled
+        for item in self.hotkey_menu.values():
+            item.state = item.key_name == self.config.hotkey
+        for item in self.language_menu.values():
+            item.state = item.code == self.config.language
+        self.listener.key_code, self.listener.flag_mask = self.config.hotkey_spec()
+        if len(self.vocabulary_menu):  # rumps can't clear a submenu that was never filled
+            self.vocabulary_menu.clear()
+        words = [rumps.MenuItem(w, callback=self.remove_word) for w in self.config.vocabulary]
+        self.vocabulary_menu.update([rumps.MenuItem("Add word…", callback=self.add_word)] + ([None] + words if words else []))
+        if self.state == "idle":
+            self.set_state("idle")
 
     # --- menu ---------------------------------------------------------------
 
@@ -99,33 +145,50 @@ class DictationApp(rumps.App):
         )
         response = window.run()
         if response.clicked and response.text.strip():
-            self.config.groq_api_key = response.text.strip()
-            config.save(self.config)
+            self.change(groq_api_key=response.text.strip())
             log("Saved the new Groq API key.")
 
+    def add_word(self, _):
+        macos.bring_to_front()
+        response = rumps.Window(
+            message="Type a name or term exactly as it should be spelled (e.g. Groq). "
+            "Separate several with commas.",
+            title="Add words to spell right",
+            default_text="",
+            ok="Add",
+            cancel="Cancel",
+            dimensions=(320, 24),
+        ).run()
+        if not response.clicked:
+            return
+        words = list(self.config.vocabulary)
+        for word in (w.strip() for w in response.text.split(",")):
+            if word and word not in words:
+                words.append(word)
+        if words != self.config.vocabulary:
+            self.change(vocabulary=words)
+            log(f"Words to spell right: {', '.join(words)}")
+
+    def remove_word(self, item):
+        macos.bring_to_front()
+        if rumps.alert(f"Remove “{item.title}”?", "It won't be used as a spelling hint anymore.", ok="Remove", cancel="Cancel"):
+            self.change(vocabulary=[w for w in self.config.vocabulary if w != item.title])
+            log(f"Removed {item.title}.")
+
     def open_settings(self, _):
-        config.save(self.config)
+        if not config.CONFIG_PATH.exists():
+            config.save(self.config)
         subprocess.run(["open", "-t", str(config.CONFIG_PATH)])
 
-    def toggle_cleanup(self, item):
-        item.state = not item.state
-        self.config.cleanup_enabled = bool(item.state)
-        config.save(self.config)
+    def toggle_cleanup(self, _):
+        self.change(cleanup_enabled=not self.config.cleanup_enabled)
 
     def choose_language(self, item):
-        for other in self.language_menu.values():
-            other.state = other is item
-        self.config.language = item.code
-        config.save(self.config)
+        self.change(language=item.code)
         log(f"Language: {LANGUAGES[item.code]}")
 
     def choose_hotkey(self, item):
-        for other in self.hotkey_menu.values():
-            other.state = other is item
-        self.config.hotkey = item.key_name
-        config.save(self.config)
-        self.listener.key_code, self.listener.flag_mask = self.config.hotkey_spec()
-        self.set_state(self.state)
+        self.change(hotkey=item.key_name)
 
     def copy_last(self, _):
         if self.last_text:
@@ -221,8 +284,11 @@ class DictationApp(rumps.App):
             if not replacement or replacement == self.config.cleanup_model:
                 raise
             log(f"Cleanup model {self.config.cleanup_model} is no longer available, switching to {replacement}.")
+            # Saved from the worker thread; the menu doesn't show the model, so nothing to refresh.
+            fresh = config.load()
+            fresh.cleanup_model = replacement
+            config.save(fresh)
             self.config.cleanup_model = replacement
-            config.save(self.config)
             return client.clean_up(text, replacement, self.config.vocabulary)
 
     # --- main thread --------------------------------------------------------
