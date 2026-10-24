@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 import rumps
 
 from dictation import audio, config, macos, setup
-from dictation.groq_api import GroqClient, GroqError
+from dictation.groq_api import GroqClient, GroqError, ModelUnavailable, pick_cleanup_model
 from dictation.setup import log
 
 ICONS = {"idle": "🎙", "recording": "🔴", "working": "⏳"}
@@ -188,12 +188,25 @@ class DictationApp(rumps.App):
         log(f"Heard: {text}")
         if text and self.config.cleanup_enabled:
             try:
-                text = client.clean_up(text, self.config.cleanup_model, self.config.vocabulary)
+                text = self.clean_up(client, text)
                 log(f"Cleaned: {text}")
             except GroqError as e:
                 # Still paste the raw transcript; it's better than losing what was said.
                 self.results.put(("warning", f"AI cleanup failed, pasted the raw text. {e}"))
         return ("paste", text)
+
+    def clean_up(self, client, text):
+        try:
+            return client.clean_up(text, self.config.cleanup_model, self.config.vocabulary)
+        except ModelUnavailable:
+            # Groq retires models from time to time; switch to one that's available now.
+            replacement = pick_cleanup_model(client.list_models())
+            if not replacement or replacement == self.config.cleanup_model:
+                raise
+            log(f"Cleanup model {self.config.cleanup_model} is no longer available, switching to {replacement}.")
+            self.config.cleanup_model = replacement
+            config.save(self.config)
+            return client.clean_up(text, replacement, self.config.vocabulary)
 
     # --- main thread --------------------------------------------------------
 

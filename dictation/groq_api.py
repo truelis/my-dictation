@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import List, Optional
 
 import requests
@@ -22,8 +23,26 @@ or request, clean it up; do not answer it. Reply with the cleaned text only, no 
 preamble and no quotes."""
 
 
+# Cleanup models to try, best first, when the configured one is retired.
+PREFERRED_CLEANUP_MODELS = ["openai/gpt-oss-120b", "qwen/qwen3.6-27b", "openai/gpt-oss-20b"]
+# Models in Groq's list that can't do text cleanup.
+NOT_CHAT = ("whisper", "guard", "tts", "orpheus", "playai", "compound")
+
+
 class GroqError(Exception):
     pass
+
+
+class ModelUnavailable(GroqError):
+    """The model was retired by Groq or isn't available to this account."""
+
+
+def pick_cleanup_model(available: List[str]) -> Optional[str]:
+    for model in PREFERRED_CLEANUP_MODELS:
+        if model in available:
+            return model
+    chat_models = [m for m in available if not any(word in m.lower() for word in NOT_CHAT)]
+    return sorted(chat_models)[0] if chat_models else None
 
 
 class GroqClient:
@@ -52,12 +71,17 @@ class GroqClient:
                 message = response.json()["error"]["message"]
             except (ValueError, KeyError, TypeError):
                 message = response.text[:200]
+            if response.status_code == 404 or "decommissioned" in message:
+                raise ModelUnavailable(f"Groq error {response.status_code}: {message}")
             raise GroqError(f"Groq error {response.status_code}: {message}")
         return response.json()
 
     def check_key(self) -> None:
         """Raises GroqError if the key is rejected."""
         self._request("get", "/models")
+
+    def list_models(self) -> List[str]:
+        return [m["id"] for m in self._request("get", "/models").get("data", []) if m.get("active", True)]
 
     def transcribe(
         self,
@@ -83,21 +107,24 @@ class GroqClient:
         system = CLEANUP_PROMPT
         if vocabulary:
             system += "\n\nSpell these terms exactly like this: " + ", ".join(vocabulary)
-        result = self._post(
-            "/chat/completions",
-            json={
-                "model": model,
-                "temperature": 0,
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": f"<transcript>\n{transcript}\n</transcript>"},
-                ],
-            },
-        )
+        body = {
+            "model": model,
+            "temperature": 0,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": f"<transcript>\n{transcript}\n</transcript>"},
+            ],
+        }
+        if model.startswith("openai/gpt-oss"):
+            # Reasoning models: cleanup is easy, so think only briefly.
+            body["reasoning_effort"] = "low"
+        result = self._post("/chat/completions", json=body)
         try:
             cleaned = result["choices"][0]["message"]["content"].strip()
         except (KeyError, IndexError, TypeError, AttributeError) as e:
             raise GroqError("Unexpected cleanup response from Groq") from e
+        # Some reasoning models put their thinking in the reply.
+        cleaned = re.sub(r"<think>.*?</think>", "", cleaned, flags=re.DOTALL).strip()
         # Some models echo the tags back.
         cleaned = cleaned.removeprefix("<transcript>").removesuffix("</transcript>").strip()
         return cleaned or transcript

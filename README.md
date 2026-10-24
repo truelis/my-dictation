@@ -76,11 +76,12 @@ it, since it holds your API key). Restart the app after editing it by hand.
 | `vocabulary`          | `[]`                     | Names and terms to spell right, e.g. `["Groq", "Kubernetes"]`        |
 | `cleanup_enabled`     | `true`                   | AI cleanup on or off                                                 |
 | `transcription_model` | `whisper-large-v3-turbo` | Groq speech-to-text model                                            |
-| `cleanup_model`       | `llama-3.3-70b-versatile`| Groq chat model used for cleanup                                     |
+| `cleanup_model`       | `openai/gpt-oss-120b`    | Groq chat model used for cleanup                                     |
 | `restore_clipboard`   | `true`                   | Put your previous clipboard back after pasting                       |
 | `play_sounds`         | `true`                   | Sounds when recording starts and stops                               |
 
-If Groq retires a model, pick a current one from
+If Groq retires the cleanup model, the app switches to an available one by
+itself and saves it. You can also pick one from
 [console.groq.com/docs/models](https://console.groq.com/docs/models). If cleanup
 fails, the raw transcript is still pasted.
 

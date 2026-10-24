@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from dictation.groq_api import GroqClient, GroqError
+from dictation.groq_api import GroqClient, GroqError, ModelUnavailable, pick_cleanup_model
 
 
 class FakeResponse:
@@ -84,3 +84,26 @@ def test_check_key_rejects_bad_key():
     with pytest.raises(GroqError, match="Invalid API Key"):
         GroqClient("bad", session=session).check_key()
     assert session.calls[0][0].endswith("/models")
+
+
+def test_retired_model_raises_model_unavailable():
+    message = "The model `llama-3.3-70b-versatile` does not exist or you do not have access to it."
+    session = FakeSession(FakeResponse(404, {"error": {"message": message}}))
+    with pytest.raises(ModelUnavailable):
+        GroqClient("key", session=session).clean_up("hi", "llama-3.3-70b-versatile")
+
+
+def test_reasoning_model_gets_low_effort_and_thinking_is_stripped():
+    reply = {"choices": [{"message": {"content": "<think>easy</think>\nHi there."}}]}
+    session = FakeSession(FakeResponse(200, reply))
+
+    cleaned = GroqClient("key", session=session).clean_up("hi there", "openai/gpt-oss-120b")
+
+    assert cleaned == "Hi there."
+    assert session.calls[0][1]["json"]["reasoning_effort"] == "low"
+
+
+def test_pick_cleanup_model_prefers_known_good_models():
+    assert pick_cleanup_model(["whisper-large-v3", "openai/gpt-oss-20b", "openai/gpt-oss-120b"]) == "openai/gpt-oss-120b"
+    assert pick_cleanup_model(["whisper-large-v3", "some/new-model"]) == "some/new-model"
+    assert pick_cleanup_model(["whisper-large-v3-turbo", "meta-llama/llama-guard-4-12b"]) is None

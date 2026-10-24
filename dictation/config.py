@@ -31,7 +31,7 @@ class Config:
     language: str = ""
     # Run the transcript through an AI model to remove filler words and fix punctuation.
     cleanup_enabled: bool = True
-    cleanup_model: str = "llama-3.3-70b-versatile"
+    cleanup_model: str = "openai/gpt-oss-120b"
     # Names and terms the transcriber often gets wrong, e.g. ["Groq", "Kubernetes"].
     vocabulary: List[str] = field(default_factory=list)
     # Put back whatever was on the clipboard before the dictation was pasted.
